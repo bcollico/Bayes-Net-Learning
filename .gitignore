@@ -1,6 +1,9 @@
 # Class directory
 AA228-CS238-Student
 
+# VS Code
+.vscode/
+
 # Latex
 *.log
 *.dvi
