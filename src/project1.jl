@@ -1,18 +1,23 @@
 # Julia Pkgs
+using LinearAlgebra
 using LightGraphs
+using DataFrames
+using CSV
 using Printf
 using SpecialFunctions
+using TikzGraphs
+using TikzPictures
 
 # User Pkgs
 using aa228_project1
 
 """
-    write_gph(dag::DiGraph, idx2names, filename)
+    write_gph(dag::SimpleDiGraph, idx2names, filename)
 
-Takes a DiGraph, a Dict of index to names and a output filename to write
+Takes a SimpleDiGraph, a Dict of index to names and a output filename to write
 the graph in `gph` format.
 """
-function write_gph(dag::DiGraph, idx2names, filename)
+function write_gph(dag::SimpleDiGraph, idx2names, filename)
     open(filename, "w") do io
         for edge in edges(dag)
             @printf(io, "%s,%s\n", idx2names[src(edge)], idx2names[dst(edge)])
@@ -20,20 +25,31 @@ function write_gph(dag::DiGraph, idx2names, filename)
     end
 end
 
+function write_score(score, filename)
+    open(filename, "w") do io
+        @printf(io, "%f", score)
+    end
+end
+
+function write_image(dag::SimpleDiGraph, filename)
+    t = TikzGraphs.plot(dag)
+    TikzPictures.save(PDF(filename),t)
+end
+
 function get_n_var_values(
     graph_vars::Vector{Variable}, 
-    graph_struct::DiGraph,
+    graph_struct::SimpleDiGraph,
     n_vars::Int
 )
     # Number of possible values (instantiations) for each variable.
     n_var_values = [graph_vars[i].m for i in 1:n_vars]
 
-    return n_var_values, n_pa_values
+    return n_var_values
 end
 
 function get_n_pa_values(
     graph_vars::Vector{Variable}, 
-    graph_struct::DiGraph,
+    graph_struct::SimpleDiGraph,
     n_vars::Int,
     n_var_values
 )
@@ -49,13 +65,13 @@ end
 """
 function sub2ind(siz, x)
     k = vcat(1, cumprod(siz[1:end-1]))
-    return dot(k, x.-1) + 1
+    return dot(k, x .-1) + 1
 end
 
 """
     bayes_net_counts(
         graph_vars::Vector{Variable}, 
-        graph_struct::DiGraph, 
+        graph_struct::SimpleDiGraph, 
         dataset::Matrix{Int}, 
         n_vars::Int
     )
@@ -65,7 +81,7 @@ compute the count matrices for each variable.
 """
 function bayes_net_counts(
     graph_vars::Vector{Variable}, 
-    graph_struct::DiGraph, 
+    graph_struct::SimpleDiGraph, 
     dataset::Matrix{Int}, 
     n_vars::Int
 )
@@ -79,15 +95,13 @@ function bayes_net_counts(
 
     # eachcol creates a generator that iterates over the second dimension
     # of the dataset, returning the columns as AbstractVector views
-    for obs_col in eachcol(dataset)
+    for obs_col in eachcol(transpose(dataset))
         # first loop:
         #   loop through each observation vector in the dataset
-
         for i_var in 1:n_vars
             # second loop:
             #   loop through each variable in the current observation
             #   vector
-
             # observation value relevant to the current looping variable
             obs_value = obs_col[i_var]
 
@@ -100,7 +114,7 @@ function bayes_net_counts(
             if !isempty(parents)
                 j = sub2ind(n_var_values[parents], obs_col[parents])
             end
-            M[i_var][j, obs_value] += 1.0
+            count_matrix[i_var][j, obs_value] += 1.0
         end
     end
     return count_matrix
@@ -109,14 +123,14 @@ end
 """
     uniform_prior(
         graph_vars::Vector{Variable}, 
-        graph_struct::DiGraph, 
+        graph_struct::SimpleDiGraph, 
         n_vars::Int
     )
 Returns alpha vector for uniform Dirchlet prior
 """
 function uniform_prior(
     graph_vars::Vector{Variable}, 
-    graph_struct::DiGraph, 
+    graph_struct::SimpleDiGraph, 
     n_vars::Int
 )
     # Number of possible values (instantiations) for variable and their parents
@@ -126,23 +140,23 @@ function uniform_prior(
 end
 
 function bayesian_score_component(
-    count_matrix::Array{Matrix{Float64}},
-    alpha::Array{Matrix{Float64}}
+    count_matrix,
+    alpha
 )
     val =  sum(loggamma.(alpha + count_matrix))
     val -= sum(loggamma.(alpha))
     val += sum(loggamma.(sum(alpha, dims=2)))
-    val -= sum(loggamma.(sum(alpha, dims=2) + sim(M, dims=2)))
+    val -= sum(loggamma.(sum(alpha, dims=2) + sum(count_matrix, dims=2)))
     return val
 end
 
 function bayesian_score(
     graph_vars::Vector{Variable}, 
-    graph_struct::DiGraph, 
+    graph_struct::SimpleDiGraph, 
     dataset::Matrix{Int}, 
     n_vars::Int
 )
-    count_matrix = statistics(graph_vars, graph_struct, dataset, n_vars)
+    count_matrix = bayes_net_counts(graph_vars, graph_struct, dataset, n_vars)
     alpha = uniform_prior(graph_vars, graph_struct, n_vars)
     # alpha = [ones(size(count_matrix[i]))for i in 1:5] # should do the same thing
 
@@ -152,24 +166,23 @@ end
 
 function k2(
     graph_vars::Vector{Variable}, 
-    graph_struct::DiGraph,
+    graph_struct::SimpleDiGraph,
     dataset::Matrix{Int},
     n_vars::Int,
     ordering::Vector{Int}
 )
-
     for i in 1:n_vars
         parents = []
         current_node = ordering[i]
-        prev_best_score = bayesian_score(graph_vars, graph_struct, dataset)
+        prev_best_score = bayesian_score(graph_vars, graph_struct, dataset, n_vars)
         while true
-            best_score = -inf
+            best_score = -Inf
             best_parent = 0
             for j in 1:i-1
                 current_parent = ordering[j]
-                if !hasedge(graph_struct, current_parent, current_node)
+                if !has_edge(graph_struct, current_parent, current_node)
                     add_edge!(graph_struct, current_parent, current_node)
-                    current_score = bayesian_score(graph_vars, graph_struct, dataset)
+                    current_score = bayesian_score(graph_vars, graph_struct, dataset, n_vars)
                     if current_score > best_score
                         best_score = current_score
                         best_parent = current_parent
@@ -186,22 +199,48 @@ function k2(
         end
 
     end
-    return graph_struct
+    return graph_struct, bayesian_score(graph_vars, graph_struct, dataset, n_vars)
 end
 
-function compute(infile, outfile)
+function output(
+    graph_struct::SimpleDiGraph,
+    best_score::Float64,
+    var_names::Array{String},
+    file_output::String
+)
 
-    # WRITE YOUR CODE HERE
-    # FEEL FREE TO CHANGE ANYTHING ANYWHERE IN THE CODE
-    # THIS INCLUDES CHANGING THE FUNCTION NAMES, MAKING THE CODE MODULAR, BASICALLY ANYTHING
+    file_output_graph = file_output*".gph"
+    file_output_fig = file_output
+    file_output_score = file_output*".score"
+
+    write_gph(graph_struct, var_names, file_output_graph)
+    write_image(graph_struct, file_output_fig)
+    write_score(best_score, file_output_score)
 
 end
 
-if length(ARGS) != 2
-    error("usage: julia project1.jl <infile>.csv <outfile>.gph")
+function compute(file_dataset::String, file_output::String)
+
+    dataset_df = DataFrame(CSV.File(file_dataset))
+
+    dataset = Matrix(dataset_df)
+    var_names = names(dataset_df)
+
+    n_vars = size(dataset,2)
+    graph_struct = SimpleDiGraph(n_vars)
+    graph_vars = [Variable(Symbol(var_names[i]),findmax(dataset[:,i])[1]) for i in 1:n_vars]
+
+    #for i in 1:n_vars
+    #    @printf("%s, %i\n", graph_vars[i].name, graph_vars[i].m)
+    #end
+
+    graph_struct, best_score = k2(graph_vars, graph_struct, dataset, n_vars, [1, 2, 3, 4, 5, 6, 7, 8])
+
+    output(graph_struct, best_score, var_names, file_output)
+
 end
 
-inputfilename = ARGS[1]
-outputfilename = ARGS[2]
+file_dataset = joinpath(@__DIR__,"..","data","small.csv")
+file_output = joinpath(@__DIR__,"..","output","small","small")
 
-compute(inputfilename, outputfilename)
+compute(file_dataset, file_output)

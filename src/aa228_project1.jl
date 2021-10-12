@@ -4,7 +4,7 @@ export Variable
 
 struct Variable
     name::Symbol
-    m::Int # number of possible values
+    m::Int
 end
 
 end # module
