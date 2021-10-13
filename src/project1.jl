@@ -243,4 +243,4 @@ end
 file_dataset = joinpath(@__DIR__,"..","data","small.csv")
 file_output = joinpath(@__DIR__,"..","output","small","small")
 
-compute(file_dataset, file_output)
+@time compute(file_dataset, file_output)
