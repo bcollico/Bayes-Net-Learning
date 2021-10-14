@@ -7,10 +7,51 @@ using Printf
 using SpecialFunctions
 using TikzGraphs
 using TikzPictures
+using Random
 
 # User Pkgs
-using aa228_project1
+# using aa228_project1
 
+# user structs
+struct Variable
+    name::Symbol
+    m::Int
+end
+
+mutable struct Particle
+    i::Int
+    pos::Vector{Int}
+    vel::Vector{Float64}
+    score::Float64
+    pos_pbest::Vector{Int}
+    score_pbest::Float64
+    function Particle(i::Int, n_vars::Int)
+        zn = zeros(n_vars)
+        # Initalize each particle position with random permutation of
+        # nodes
+        pos_0 = shuffle([1:n_vars...])
+        return new(i, pos_0, rand(0:1e-5:1,n_vars), -Inf, pos_0, -Inf)
+    end
+end
+
+mutable struct PSO
+    P::Vector{Particle}
+    n_p::Int
+    n_vars::Int
+    pos_gbest::Vector{Int}
+    score_gbest::Float64
+    mut_frac::Float64
+    mut_n::Int
+    search_fcn
+    gbest_i::Int
+    gbest_i_max::Int
+    function PSO(n_p::Int, n_vars::Int, search_fcn)
+        P = [Particle(i, n_vars) for i in 1:n_p]
+        return new(P, n_p, n_vars, zeros(Int, n_vars), -Inf, 0.1, 2, search_fcn, 0, 5)
+    end
+end
+
+# user fcns
 """
     write_gph(dag::SimpleDiGraph, idx2names, filename)
 
@@ -34,6 +75,22 @@ end
 function write_image(dag::SimpleDiGraph, filename)
     t = TikzGraphs.plot(dag)
     TikzPictures.save(PDF(filename),t)
+end
+
+function output(
+    graph_struct::SimpleDiGraph,
+    best_score::Float64,
+    var_names::Array{String},
+    file_output::String
+)
+
+    file_output_graph = file_output*".gph"
+    file_output_fig = file_output
+    file_output_score = file_output*".score"
+
+    write_gph(graph_struct, var_names, file_output_graph)
+    write_image(graph_struct, file_output_fig)
+    write_score(best_score, file_output_score)
 end
 
 function get_n_var_values(
@@ -202,21 +259,102 @@ function k2(
     return graph_struct, bayesian_score(graph_vars, graph_struct, dataset, n_vars)
 end
 
-function output(
-    graph_struct::SimpleDiGraph,
-    best_score::Float64,
-    var_names::Array{String},
-    file_output::String
-)
+function particle_eval(pso::PSO)
 
-    file_output_graph = file_output*".gph"
-    file_output_fig = file_output
-    file_output_score = file_output*".score"
+    # increment 
+    pso.gbest_i += 1
 
-    write_gph(graph_struct, var_names, file_output_graph)
-    write_image(graph_struct, file_output_fig)
-    write_score(best_score, file_output_score)
+    for particle in pso.P
+        _, particle.score = pso.search_fcn(particle.pos)
+        if particle.score > particle.score_pbest
+            particle.score_pbest = particle.score
+            particle.pos_pbest = particle.pos_pbest
+        end
+        if particle.score_pbest > pso.score_gbest
+            pso.score_gbest = particle.score_pbest
+            pso.pos_gbest = particle.pos_pbest
+            pso.gbest_i = 0
+        end
+        
+    end
 
+end
+
+function particle_update(pso::PSO)
+    #C = zeros(3) # Matrix of weighting coefficients
+    C = [0.1, 0.45, 0.45]
+    for particle in pso.P
+        
+        # Weight the personal best score based on percent deviation 
+        # normalized by number of components shared with pbest position
+        #C[2] = abs(particle.score_pbest - particle.score) / 
+        #       (sum([particle.pos_pbest[i] == particle.pos[i] for i in 1:pso.n_vars]) + 1)
+
+        # Weight the global best score based on percent deviation 
+        # normalized by number of components shared with gbest position
+        #C[3] = abs(pso.score_gbest - particle.score) / 
+        #        (sum([pso.pos_gbest[i] == particle.pos[i] for i in 1:pso.n_vars]) + 1)
+
+        # Weight the inertia term using a random value less than or equal
+        # to the max of the pbest and gbest weighting terms
+        #C[1] = rand(0:1e-5:max(C...))
+
+        # Compute the particle velocity update as the weighted combination
+        # of current velocity,
+
+        #@printf("\tC_%i: %f, %f, %f\n", particle.i, C[1], C[2], C[3])
+
+        #normalize!(C)
+
+        particle.vel = C[1]*(particle.vel) +
+                       C[2]*(particle.pos_pbest - particle.pos) +
+                       C[3]*(pso.pos_gbest      - particle.pos) 
+
+        # The position update produces float values. Compute the new
+        # particle position by sorting by the most negative values 
+        # computed in the x_i + v_i position update.
+        particle.pos = particle.pos[sortperm(particle.pos + particle.vel)]
+    end
+end
+
+function particle_mutate(pso::PSO)
+
+    # generate random indices to mutate
+    mut_idx = rand(1:pso.n_vars, Int64(ceil(pso.mut_frac*pso.n_p)), pso.mut_n)
+
+    for particle in pso.P
+        for i in 1:Int64(pso.mut_n/2)
+            # swap each pair of random indices
+            temp = particle.pos[mut_idx[i]]
+            particle.pos[mut_idx[i]] = particle.pos[mut_idx[i*2-1]]
+            particle.pos[mut_idx[i*2-1]] = temp
+        end
+    end
+end
+
+function particle_swarm_optimization(pso::PSO)
+    i = 0
+    while pso.gbest_i < pso.gbest_i_max
+        i += 1
+
+        @printf("PSO Iteration: %i, gbest: %f, gbest_i: %i\n", i, pso.score_gbest, pso.gbest_i)
+        for particle in pso.P
+            fmt = "%i "
+            @printf("\tParticle %i Ordering: ", particle.i)
+            for i in 1:pso.n_vars
+                @printf("% i", particle.pos[i])
+            end
+            @printf(" and Velocity: ")
+            for i in 1:pso.n_vars
+                @printf("%f ", particle.vel[i])
+            end
+            @printf("\n")
+        end
+
+        particle_eval(pso)
+        particle_update(pso)
+        particle_mutate(pso)
+    end
 end
 
 function compute(file_dataset::String, file_output::String)
@@ -230,17 +368,33 @@ function compute(file_dataset::String, file_output::String)
     graph_struct = SimpleDiGraph(n_vars)
     graph_vars = [Variable(Symbol(var_names[i]),findmax(dataset[:,i])[1]) for i in 1:n_vars]
 
-    #for i in 1:n_vars
-    #    @printf("%s, %i\n", graph_vars[i].name, graph_vars[i].m)
-    #end
+    for i in 1:n_vars
+        @printf("Variable: %s, # Values: %i\n", graph_vars[i].name, graph_vars[i].m)
+    end
 
-    graph_struct, best_score = k2(graph_vars, graph_struct, dataset, n_vars, [1, 2, 3, 4, 5, 6, 7, 8])
+    search_fcn(ordering::Vector{Int}) = k2(graph_vars, SimpleDiGraph(n_vars), dataset, n_vars, ordering)
+    pso = PSO(2, n_vars, search_fcn)
+
+    particle_swarm_optimization(pso)
+
+    graph_struct, best_score = pso.search_fcn(pso.pos_gbest)
+
+    @printf("\tFinal Results: \n\t Score: %f \n\t Ordering: ", pso.score_gbest)
+    for i in 1:pso.n_vars
+        @printf("% i", pso.pos_gbest[i])
+    end
 
     output(graph_struct, best_score, var_names, file_output)
 
 end
 
-file_dataset = joinpath(@__DIR__,"..","data","small.csv")
-file_output = joinpath(@__DIR__,"..","output","small","small")
+#code execution
+runcases = ["small","medium","large"]
+which_run = [2]
 
-@time compute(file_dataset, file_output)
+for i in which_run
+    file_dataset = joinpath(@__DIR__,"..","data",runcases[i]*".csv")
+    file_output = joinpath(@__DIR__,"..","output",runcases[i],runcases[i])
+
+    @time compute(file_dataset, file_output)
+end
