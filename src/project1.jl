@@ -1,4 +1,6 @@
-# Julia Pkgs
+########################################################################
+#                           JULIA PACKAGES                             #
+########################################################################
 using LinearAlgebra
 using LightGraphs
 using DataFrames
@@ -9,49 +11,63 @@ using TikzGraphs
 using TikzPictures
 using Random
 
-# User Pkgs
-# using aa228_project1
-
-# user structs
+########################################################################
+#                              USER STRUCTS                            #
+########################################################################
 struct Variable
     name::Symbol
     m::Int
 end
 
 mutable struct Particle
-    i::Int
-    pos::Vector{Int}
-    vel::Vector{Float64}
-    score::Float64
-    pos_pbest::Vector{Int}
-    score_pbest::Float64
+    i::Int                  # particle number
+    pos::Vector{Int}        # current particle position
+    vel::Vector{Float64}    # current particle velocity
+    score::Float64          # current particle score
+    pos_pbest::Vector{Int}  # best    particle position
+    score_pbest::Float64    # best    particle score
+    """
+        Constructor Particle(i::Int, n_vars::Int)
+
+    Initialize particle with bounded random position and velocity and
+    -Inf score
+    """
     function Particle(i::Int, n_vars::Int)
         zn = zeros(n_vars)
-        # Initalize each particle position with random permutation of
-        # nodes
         pos_0 = shuffle([1:n_vars...])
         return new(i, pos_0, rand(0:1e-5:1,n_vars), -Inf, pos_0, -Inf)
     end
 end
 
 mutable struct PSO
-    P::Vector{Particle}
-    n_p::Int
-    n_vars::Int
-    pos_gbest::Vector{Int}
-    score_gbest::Float64
-    mut_frac::Float64
-    mut_n::Int
-    search_fcn
-    gbest_i::Int
-    gbest_i_max::Int
+    P::Vector{Particle}     # array of n_p particles
+    n_p::Int                # number of particles used in process
+    n_vars::Int             # number of variables in graph
+    pos_gbest::Vector{Int}  # global best particle position
+    score_gbest::Float64    # global best particle score
+    mut_frac::Float64       # percentage of particles to mutate at each iteration
+    mut_n::Int              # number of mutations (2 * number of swaps)
+    search_fcn              # function handle of graph search function
+    gbest_i::Int            # number of iterations with same gbest score
+    gbest_i_max::Int        # termination condition
+    C::Vector{Float64}      # velocity weighting coefficients
+    """
+        Constructor PSO(n_p::Int, n_vars::Int, search_fcn)
+
+    Initialize particle swarm optimization process with i particles,
+    n_vars graph variables, and search algorithm search_fcn. Set initial
+    gbest position to zeros and gbest score to -Inf. Set default 
+    parameters as: mut_frac=0.1, mut_n=2, gbest_i_max=5.
+    """
     function PSO(n_p::Int, n_vars::Int, search_fcn)
         P = [Particle(i, n_vars) for i in 1:n_p]
-        return new(P, n_p, n_vars, zeros(Int, n_vars), -Inf, 0.1, 2, search_fcn, 0, 5)
+        return new(P, n_p, n_vars, zeros(Int, n_vars), -Inf, 0.1, 2, search_fcn, 0, 5, [0.25, 0.35, 0.4])
     end
 end
 
-# user fcns
+########################################################################
+#                         OUTPUT FUNCTIONS                             #
+########################################################################
 """
     write_gph(dag::SimpleDiGraph, idx2names, filename)
 
@@ -66,17 +82,38 @@ function write_gph(dag::SimpleDiGraph, idx2names, filename)
     end
 end
 
+"""
+    write_score(score::Float64, filename::String)
+
+Write score to <filename>.score.
+"""
 function write_score(score, filename)
     open(filename, "w") do io
         @printf(io, "%f", score)
     end
 end
 
+"""
+    write_image(dag::SimpleDiGraph, filename::String)
+
+Create visualization directed acyclical graph dag and save to 
+<filename>.pdf.
+"""
 function write_image(dag::SimpleDiGraph, filename)
     t = TikzGraphs.plot(dag)
     TikzPictures.save(PDF(filename),t)
 end
 
+"""
+    output(
+        graph_struct::SimpleDiGraph,
+        best_score::Float64,
+        var_names::Array{String},
+        file_output::String
+    )
+
+Wrapper for outputting .gph, .score, and .pdf files.
+"""
 function output(
     graph_struct::SimpleDiGraph,
     best_score::Float64,
@@ -93,6 +130,19 @@ function output(
     write_score(best_score, file_output_score)
 end
 
+########################################################################
+#                          BAYES NET FUNCTIONS                         #
+########################################################################
+
+"""
+    get_n_var_values(
+        graph_vars::Vector{Variable}, 
+        graph_struct::SimpleDiGraph,
+        n_vars::Int
+    )
+
+Get the number of possible values (r_i) for each variable in graph_vars.
+"""
 function get_n_var_values(
     graph_vars::Vector{Variable}, 
     graph_struct::SimpleDiGraph,
@@ -104,6 +154,17 @@ function get_n_var_values(
     return n_var_values
 end
 
+"""
+    get_n_pa_values(
+        graph_vars::Vector{Variable}, 
+        graph_struct::SimpleDiGraph,
+        n_vars::Int,
+        n_var_values
+    )
+
+Get the number of possible parental instantiations (q_i) at each node for
+each possible node value (k).
+"""
 function get_n_pa_values(
     graph_vars::Vector{Variable}, 
     graph_struct::SimpleDiGraph,
@@ -116,10 +177,6 @@ function get_n_pa_values(
     return n_pa_values
 end
 
-"""
-    sub2ind(siz, x)
-
-"""
 function sub2ind(siz, x)
     k = vcat(1, cumprod(siz[1:end-1]))
     return dot(k, x .-1) + 1
@@ -183,7 +240,7 @@ end
         graph_struct::SimpleDiGraph, 
         n_vars::Int
     )
-Returns alpha vector for uniform Dirchlet prior
+Returns alpha vector for uniform Dirchlet prior.
 """
 function uniform_prior(
     graph_vars::Vector{Variable}, 
@@ -196,6 +253,13 @@ function uniform_prior(
     return [ones(n_pa_values[i], n_var_values[i]) for i in 1:n_vars]
 end
 
+"""
+    bayesian_score_component(
+        count_matrix::Vector{Matrix{Int}}, 
+        alpha::Vector{Matrix{Int}}
+    )
+Helper function for computing the summation in the Bayesian score equation.
+"""
 function bayesian_score_component(
     count_matrix,
     alpha
@@ -207,6 +271,17 @@ function bayesian_score_component(
     return val
 end
 
+"""
+    bayesian_score(
+        graph_vars::Vector{Variable}, 
+        graph_struct::SimpleDiGraph, 
+        dataset::Matrix{Int}, 
+        n_vars::Int
+    )
+
+Compute the Bayesian score associated with graph_struct according to
+Algorithm 5.1 in Kochenderfer, Algorithms for Decision Making
+"""
 function bayesian_score(
     graph_vars::Vector{Variable}, 
     graph_struct::SimpleDiGraph, 
@@ -221,6 +296,22 @@ function bayesian_score(
     return sum(bayesian_score_component(count_matrix[i], alpha[i]) for i in 1:n_vars)
 end
 
+########################################################################
+#                    STRUCTURE LEARNING FUNCTIONS                      #
+########################################################################
+"""
+    function k2(
+        graph_vars::Vector{Variable}, 
+        graph_struct::SimpleDiGraph,
+        dataset::Matrix{Int},
+        n_vars::Int,
+        ordering::Vector{Int}
+    )
+
+k2 algorithm for Bayesian graph structure learning. Given an ordering of
+graph_vars, add edges to the graph_struct that maximize the Bayesian
+score for a given dataset.
+"""
 function k2(
     graph_vars::Vector{Variable}, 
     graph_struct::SimpleDiGraph,
@@ -259,16 +350,22 @@ function k2(
     return graph_struct, bayesian_score(graph_vars, graph_struct, dataset, n_vars)
 end
 
+"""
+    Method particle_eval(pso::PSO)
+
+Evaluate the score of each particle in the pso struct using the
+embedded search_fcn.
+"""
 function particle_eval(pso::PSO)
 
     # increment 
     pso.gbest_i += 1
 
-    for particle in pso.P
+    Threads.@threads for particle in pso.P
         _, particle.score = pso.search_fcn(particle.pos)
         if particle.score > particle.score_pbest
             particle.score_pbest = particle.score
-            particle.pos_pbest = particle.pos_pbest
+            particle.pos_pbest = particle.pos
         end
         if particle.score_pbest > pso.score_gbest
             pso.score_gbest = particle.score_pbest
@@ -280,9 +377,12 @@ function particle_eval(pso::PSO)
 
 end
 
+"""
+    Method particle_update(pso::PSO)
+
+Update the velocity and position of each particle.
+"""
 function particle_update(pso::PSO)
-    #C = zeros(3) # Matrix of weighting coefficients
-    C = [0.1, 0.45, 0.45]
     for particle in pso.P
         
         # Weight the personal best score based on percent deviation 
@@ -300,15 +400,11 @@ function particle_update(pso::PSO)
         #C[1] = rand(0:1e-5:max(C...))
 
         # Compute the particle velocity update as the weighted combination
-        # of current velocity,
+        # of current, pbest, and gbest states
 
-        #@printf("\tC_%i: %f, %f, %f\n", particle.i, C[1], C[2], C[3])
-
-        #normalize!(C)
-
-        particle.vel = C[1]*(particle.vel) +
-                       C[2]*(particle.pos_pbest - particle.pos) +
-                       C[3]*(pso.pos_gbest      - particle.pos) 
+        particle.vel = pso.C[1]*(particle.vel) +
+                       pso.C[2]*(particle.pos_pbest - particle.pos) +
+                       pso.C[3]*(pso.pos_gbest      - particle.pos) 
 
         # The position update produces float values. Compute the new
         # particle position by sorting by the most negative values 
@@ -317,21 +413,41 @@ function particle_update(pso::PSO)
     end
 end
 
+"""
+    Method particle_mutate(pso::PSO)
+
+Mutate a mut_frac percentage of the particles by randomly swapping nodes
+in the ordering list.
+"""
 function particle_mutate(pso::PSO)
 
-    # generate random indices to mutate
-    mut_idx = rand(1:pso.n_vars, Int64(ceil(pso.mut_frac*pso.n_p)), pso.mut_n)
+    # compute number of particles to mutate
+    n_p_mutate = Int64(ceil(pso.mut_frac*pso.n_p))
 
-    for particle in pso.P
-        for i in 1:Int64(pso.mut_n/2)
+    # generate random particles to mutate
+    mut_idx   = rand(1:pso.n_p, n_p_mutate, 1)
+
+    #generate random nodes to swap
+    mut_which = rand(1:pso.n_vars, n_p_mutate, pso.mut_n)
+
+    k = 0
+    for particle in pso.P[mut_idx]
+        k += 1
+        for j in 1:Int64(pso.mut_n/2)
             # swap each pair of random indices
-            temp = particle.pos[mut_idx[i]]
-            particle.pos[mut_idx[i]] = particle.pos[mut_idx[i*2-1]]
-            particle.pos[mut_idx[i*2-1]] = temp
+            temp = particle.pos[mut_which[k,j]]
+            particle.pos[mut_which[k,j]] = particle.pos[mut_which[k,j*2-1]]
+            particle.pos[mut_which[k,j*2-1]] = temp
         end
     end
 end
 
+"""
+    Method particle_swarm_optimization(pso::PSO)
+
+Wrapper for running the particle swarm optimization routine. Runs until
+termination condition has been met.
+"""
 function particle_swarm_optimization(pso::PSO)
     i = 0
     while pso.gbest_i < pso.gbest_i_max
@@ -357,7 +473,10 @@ function particle_swarm_optimization(pso::PSO)
     end
 end
 
-function compute(file_dataset::String, file_output::String)
+########################################################################
+#                           CODE EXECUTION                             #
+########################################################################
+function compute(file_dataset::String, file_output::String, n_p::Int)
 
     dataset_df = DataFrame(CSV.File(file_dataset))
 
@@ -373,7 +492,7 @@ function compute(file_dataset::String, file_output::String)
     end
 
     search_fcn(ordering::Vector{Int}) = k2(graph_vars, SimpleDiGraph(n_vars), dataset, n_vars, ordering)
-    pso = PSO(2, n_vars, search_fcn)
+    pso = PSO(n_p, n_vars, search_fcn)
 
     particle_swarm_optimization(pso)
 
@@ -388,13 +507,12 @@ function compute(file_dataset::String, file_output::String)
 
 end
 
-#code execution
 runcases = ["small","medium","large"]
-which_run = [2]
+which_run = [1]
 
 for i in which_run
     file_dataset = joinpath(@__DIR__,"..","data",runcases[i]*".csv")
     file_output = joinpath(@__DIR__,"..","output",runcases[i],runcases[i])
 
-    @time compute(file_dataset, file_output)
+    @time compute(file_dataset, file_output, 8)
 end
