@@ -48,7 +48,7 @@ The position is updated as the sum of the previous position and the updated velo
 \begin{equation}
     x^{t+1}_i = x^t_i + v^{t+1}_i
 \end{equation}
-Since this operation results in floating point values, <REFERENCE> proposes sorting the resulting values of $x^{t+1}_i$ smallest-to-large and using the corresponding ordering of nodes as the updated position. This method was incorporated in the present algorithm.
+Since this operation results in floating point values, \cite{paper3} proposes sorting the resulting values of $x^{t+1}_i$ smallest-to-large and using the corresponding ordering of nodes as the updated position. This method was incorporated in the present algorithm.
 \subsubsection{Mutation}
 At each iteration of the particle swarm algorithm, a small percentage of the particles were randomly selected to have two random nodes in their ordering switch. The percentage was fixed at 10\% for these simulations.
 \subsubsection{Termination Condition}
