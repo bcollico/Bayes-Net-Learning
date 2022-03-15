@@ -1,4 +1,10 @@
 # AA 228: Decision Making Under Uncertainty
+The full project Report is available here: [AA288_Project1.pdf](./docs/aa228_project1.pdf)
+
+## Approach
+
+Learning the optimal Bayesian network structure from a set of unordered node is an NP-hard problem. Rather than searching the space of possible graph structures, the complexity may be reduced by searching the *ordering space* of the nodes. This code utilizes a Particle Swarm Optimization (PSO) based global optimization routine [3] to determine the preferred node order, and the traditional K2 algorithm [1, 2] for learning the optimal structure of the Bayesian network given a specific ordering.
+
 ## Project 1 Description
 
 Learn the structure of a bayesian network that best represents the given data sets. There are 3 data sets:
@@ -10,10 +16,6 @@ The results are stored in the `output` folder:
 - Bayesian scores
 - .gph graph structure files
 - .png graph visualization files
-
-## Approach
-
-Learning the optimal Bayesian network structure from a set of unordered node is an NP-hard problem. Rather than searching the space of possible graph structures, the complexity may be reduced by searching the *ordering space* of the nodes. This code utilizes a Particle Swarm Optimization (PSO) based global optimization routine [3] to determine the preferred node order, and the traditional K2 algorithm [1, 2] for learning the optimal structure of the Bayesian network given a specific ordering.
 
 References:
 
