@@ -1,5 +1,5 @@
 ## AA 228: Decision Making Under Uncertainty
-A Julia implementatoin of Particle Swarm Optimization for Bayesian network structure learning. 
+A Julia implementation of Particle Swarm Optimization for Bayesian network structure learning. 
 
 A brief write-up available here: [AA288_Project1.pdf](./docs/aa228_project1.pdf)
 
@@ -11,7 +11,7 @@ Learning the optimal Bayesian network structure from a set of unordered node is 
 
 ### Project 1 Description
 
-Learn the structure of a bayesian network that best represents the given data sets. There are 3 data sets:
+Learn the structure of a Bayesian network that best represents the given data sets. There are 3 data sets:
 - small.csv, 8 vars
 - medium.csv, 12 vars
 - large.csv, 50 vars
