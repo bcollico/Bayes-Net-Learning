@@ -1,7 +1,7 @@
 ## AA 228: Decision Making Under Uncertainty
 A Julia implementation of Particle Swarm Optimization for Bayesian network structure learning. 
 
-A brief write-up available here: [AA288_Project1.pdf](./docs/aa228_project1.pdf)
+A brief write-up available here: [AA228_Project1.pdf](./docs/aa228_project1.pdf)
 
 ## Project 1: Bayesian Network Structure Learning
 
